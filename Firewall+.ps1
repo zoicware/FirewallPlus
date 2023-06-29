@@ -1,5 +1,4 @@
 
-
 If (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]'Administrator')) 
 {	Start-Process PowerShell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $PSCommandPath) -Verb RunAs
     Exit	}
@@ -131,28 +130,78 @@ Set-Content -Path "C:\FirewallUpdater.ps1" -Value $content
 
 
 $taskName = "FirewallUpdater"
-$actionScript = "C:\FirewallUpdater.ps1"
+
 
 # Check if the task already exists
 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 
 if ($existingTask -eq $null) {
-    # Create a new scheduled task
-    $trigger = New-ScheduledTaskTrigger -Daily -At 4am
-    $trigger.StartBoundary = ([datetime]::Today.AddDays(1).Date + [TimeSpan]::FromHours(4)).ToString("yyyy-MM-ddTHH:mm:ss")
-    $trigger.ExecutionTimeLimit = "PT15M" 
-    $trigger.Enabled = $true
+# Get the current user's username
+$currentUserName = $env:COMPUTERNAME + "\" + $env:USERNAME
+$username = Get-LocalUser -Name $env:USERNAME | Select-Object -ExpandProperty sid
+
+
+New-Item -Path C:\FirewallUpdater -ItemType File -Force
+$content = '<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>'+$currentUserName+'</Author>
+    <URI>\FirewallUpdater</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2023-06-28T04:00:00</StartBoundary>
+      <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>'+$username+'</UserId>
+      <LogonType>S4U</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT72H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>PowerShell.exe</Command>
+      <Arguments>-ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\FirewallUpdater.ps1"</Arguments>
+    </Exec>
+  </Actions>
+</Task>' | out-file C:\FirewallUpdater
+
+
+schtasks /Create /XML "C:\FirewallUpdater" /TN "\FirewallUpdater" /F 
+
+
+
+Remove-Item -Path "C:\FirewallUpdater" -Force
+
     
-    $action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`""
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    
-    Register-ScheduledTask -TaskName $taskName -Trigger $trigger -Action $action -Settings $settings -RunLevel Highest
-    Write-Host "Scheduled task created successfully."
 } else {
     Write-Host "Scheduled task already exists."
 }
-
-
-
-
-
